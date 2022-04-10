@@ -1,0 +1,80 @@
+#define BLINKER_WIFI
+#define BLINKER_MIOT_OUTLET
+#include <Blinker.h>
+#include <SoftwareSerial.h>
+#define LED_BUILTIN 2
+char auth[] = "XXXXXX";//Brinker的设备密钥
+char ssid[] = "XXXXXX";//WIFI名称
+char pswd[] = "XXXXXXX";//WiFi密码
+SoftwareSerial MySerial(13,15);//RX=d7,TX=d8
+BlinkerButton Button1("btn-door");
+
+void button1_callback(const String & state)
+{
+if (state == "tap") { //按键被按下
+//Serial.swap();
+MySerial.print("open\r\n");
+Serial.print("open\r\n");
+//Serial.swap();
+Button1.color("#00FF00"); 
+delay(1000); 
+digitalWrite(LED_BUILTIN, HIGH);
+}
+}
+
+void miotPowerState(const String & state)
+{
+  // BLINKER_LOG("need set power state:",state);
+  
+  if(state == BLINKER_CMD_ON){
+
+    BlinkerMIOT.powerState("on");
+    //Serial.write()op);
+    //Serial.swap();
+   MySerial.print("open\r\n");
+    Serial.print("open\r\n");
+    //Serial.swap();
+    
+    
+    }
+  }
+
+ void miotQuery(int32_t queryCode)
+{
+    //BLINKER_LOG("MIOT Query codes: ", queryCode);
+
+    switch (queryCode)
+    {
+        case BLINKER_CMD_QUERY_POWERSTATE_NUMBER :
+        //Serial.swap();
+        MySerial.print("open\r\n");
+            Serial.print("open\r\n");
+        //Serial.swap();
+            BlinkerMIOT.print();
+            break;
+      
+        default :
+            BlinkerMIOT.print();
+            break;
+    }
+}
+
+  
+void setup()
+{
+  MySerial.begin(115200);
+Serial.begin(115200);
+BLINKER_DEBUG.stream(Serial);
+Blinker.begin(auth, ssid, pswd);
+Button1.attach(button1_callback);
+BlinkerMIOT.attachPowerState(miotPowerState);
+BlinkerMIOT.attachQuery(miotQuery);
+
+//int counter = 0;
+//int val=9527;
+//char ope[]="open";
+}
+
+void loop() {
+Blinker.run();
+}
