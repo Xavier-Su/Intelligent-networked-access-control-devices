@@ -1,0 +1,133 @@
+#include <SPI.h>
+#include <SoftwareSerial.h>
+#include <MFRC522.h>
+#include <Servo.h>
+MFRC522 rfid(10, 9);//10SDA  ,9RST
+Servo mg90s;
+byte nuidPICC[4];
+SoftwareSerial softSerial(2, 3); //RX=2,TX=3
+
+void servo();
+void rfid_wait();
+void nrf();
+void esp_wait();
+String condata = "";
+#define num_card 2 //卡的数量
+
+int ID[num_card][5] = {
+  {xxx, xxx, xxx,xxx},
+  {xxx, xxx, xxx, xxx},
+  
+};//卡的数据分别放入该二位数组
+
+//arduino nano
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+RF24 radio(7, 8); // CE, CSN
+const byte address[6] = "00001";//接收地址
+
+void setup()
+{
+  SPI.begin(); // 初始化SPI总线
+  digitalWrite(10, HIGH);
+  rfid.PCD_Init();
+  Serial.begin(9600);
+  softSerial.begin(9600);
+  softSerial.listen();
+  mg90s.attach(5);
+  mg90s.write(0);
+
+  radio.begin();
+  radio.openReadingPipe(0, address);
+  radio.setPALevel(RF24_PA_MIN);
+  radio.startListening();
+
+}
+
+void loop() {
+  digitalWrite(10, HIGH);
+  nrf();
+  esp_wait();
+  digitalWrite(10, LOW);
+  
+  //Serial.println("wait open");
+  
+  rfid_wait();
+  digitalWrite(10, HIGH);
+}
+
+void esp_wait()
+{
+  delay(100);
+  if (softSerial.available() > 0)
+  {
+    condata = "";
+    while (softSerial.available() > 0) {
+      condata += char(softSerial.read());
+      Serial.println((char)softSerial.read());
+      delay(2);
+    }
+    if (condata.length() > 0) {
+      Serial.print("收到数据为：");
+      Serial.println(condata);
+      Serial.println(condata.length());
+    }
+    if (condata.length() > 3 && condata[0] == 'o') {
+      servo();
+    }
+    if (condata.length() == 1) {
+      servo();
+    }
+    condata = "";
+  }
+}
+
+void nrf()
+{
+  if (radio.available()) {
+    char text[32] = "";
+    radio.read(&text, sizeof(text));
+    Serial.println(text);
+    if (text[0] == 'o' && text[1] == 'p' && text[2] == 'e' && text[3] == 'n') {
+      Serial.print("ok ");
+      Serial.println(text);
+      servo();
+    }
+  }
+}
+
+void rfid_wait()
+{
+  if ( ! rfid.PICC_IsNewCardPresent())
+    return;
+  // 验证NUID是否可读
+  if ( ! rfid.PICC_ReadCardSerial())
+    return;
+  MFRC522::PICC_Type piccType = rfid.PICC_GetType(rfid.uid.sak);
+  // 将NUID保存到nuidPICC数组
+  for (byte i = 0; i < 4; i++) {
+    nuidPICC[i] = rfid.uid.uidByte[i];
+  }
+  for (int i = 0; i < num_card; i++)
+  {
+    if ((nuidPICC[0] == ID[i][0] && nuidPICC[1] == ID[i][1] && nuidPICC[2] == ID[i][2] && nuidPICC[3] == ID[i][3]))
+
+    { Serial.println("rfid_open");
+      servo();
+      for (int i = 0; i < 4; i++) {
+        nuidPICC[i] = 0;
+      }
+
+    }
+  }
+}
+
+void servo()
+{
+  mg90s.write(150);
+  delay(1200);
+  digitalWrite(LED_BUILTIN, HIGH);
+  mg90s.write(0);
+
+}

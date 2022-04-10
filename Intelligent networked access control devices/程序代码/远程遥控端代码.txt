@@ -1,0 +1,298 @@
+#include <ESP8266WiFi.h>
+#include <Ticker.h>  //定时器库
+Ticker tickerSetHigh;
+
+#include <DallasTemperature.h>  //温度库
+#include <OneWire.h>
+#define ONE_WIRE_BUS 2
+
+
+#include <U8g2lib.h>  //屏幕库
+#ifdef U8X8_HAVE_HW_I2C 
+#include <Wire.h>
+#include <SPI.h>
+#endif
+
+U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ D3, /* data=*/ D1, /* reset=*/ U8X8_PIN_NONE);   // All Boards without Reset of the Display
+
+
+int signal_temp = 0;  //温度信号灯
+
+int hours = 0;  //时间数据
+int minutes = 0;
+int seconds = 0;
+
+int signal_switch = 0;  //开门信号灯
+
+#include <ESP8266WiFi.h>  //wifi库，获取网络时间
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+const char* ssid = "xxxxxxxx";       // 连接WiFi名                                           // 请将您需要连接的WiFi名填入引号中
+const char* password = "xxxxxxx";          // 连接WiFi密码
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "ntp1.aliyun.com", 60 * 60 * 8, 30 * 60 * 1000);
+
+
+//esp8266 //2.4G无线信号库
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+RF24 radio(2, 4); // d4CE, d2CSN
+const byte address[6] = "00001";  //无线信号发送地址
+const int button = 15; //gpio15=d8  //按钮引脚
+
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);  //温度传感器定义
+float p = 0;
+String tem = "";
+
+int i = 0;
+int t = 0;
+void TIME_CALL() {  //回调函数--带参数
+
+  t++;
+  //if(t=10){t=0;}
+  seconds++;
+  if (seconds == 60) {
+    seconds = 0, minutes++;
+  }
+  if (minutes == 60) {
+    minutes = 0, hours++;
+  }
+  if (hours == 24) {
+    hours = 0;
+  }
+  i++;
+  if (i == 10) {
+    signal_temp = 1;
+    i = 0;
+  }
+
+  // Serial.println(i);
+  //digitalWrite(LED_BUILTIN, i);
+}
+
+void setup() {
+  Serial.begin(115200);
+  //pinMode(LED_BUILTIN, OUTPUT);
+  tickerSetHigh.attach_ms(1000, TIME_CALL);//每隔1000毫秒调用一次回调函数--带参数
+
+  sensors.begin();
+
+  gettemp(1);
+
+  radio.begin();
+  radio.openWritingPipe(address);
+  radio.setPALevel(RF24_PA_MIN);
+  radio.stopListening();
+
+  pinMode(D8, INPUT);
+  attachInterrupt(digitalPinToInterrupt(D8), sw, RISING);
+
+  u8g2.begin();
+  u8g2.enableUTF8Print();
+  boot_up_screen();
+
+
+  connectWiFi();
+  timeClient.begin();
+  //timeload(0);
+
+}
+
+void loop() {
+
+  gettemp(signal_temp);
+  signal_temp = 0;
+  opendoor(signal_switch);
+  signal_switch = 0;
+
+  boot_up_after();
+
+  if (t == 10) {
+    timeload(t);
+    t = 0;
+  }
+
+
+}
+
+ICACHE_RAM_ATTR void sw() { //外部引脚中断信号灯
+
+  signal_switch = 1;
+
+}
+
+void opendoor(int signal_switch)
+{
+  if (signal_switch == 0) {
+    return;
+  }
+  if (signal_switch == 1) {
+    const char text[] = "open";
+    radio.write(&text, sizeof(text));
+    Serial.println("发送中。。。");
+    //Serial.println(digitalRead(D8));
+
+    u8g2.setFont(u8g2_font_unifont_t_chinese2);
+    u8g2.setCursor(0, 36);
+    u8g2.print("开门中");
+    delay(200);
+    u8g2.sendBuffer();
+
+    signal_switch = 0;
+
+
+  }
+}
+
+void gettemp(int signal_temp) {
+
+  if (signal_temp == 0) {
+    return;
+  }
+  if (signal_temp == 1) {
+
+    sensors.requestTemperatures(); // 发送命令获取温度
+    //Serial.print("Temperature for the device 1 (index 0) is: ");
+    //Serial.println(sensors.getTempCByIndex(0));
+
+    p = sensors.getTempCByIndex(0);
+    tem = (String)p;
+    Serial.println(tem);
+    signal_temp = 0;
+  }
+}
+
+
+void timeload(int t) {
+  Serial.println("time first");
+
+  Serial.print(hours);
+  Serial.print(":");
+  Serial.print(minutes);
+  Serial.print(":");
+  Serial.println(seconds);
+
+  timeClient.update();
+  Serial.println(timeClient.getFormattedTime());
+  String h_s = timeClient.getFormattedTime().substring(0, 2);
+  String m_s = timeClient.getFormattedTime().substring(3, 5);
+  String s_s = timeClient.getFormattedTime().substring(6, 8);
+  hours = atoi(h_s.c_str());
+  minutes = atoi(m_s.c_str());
+  seconds = atoi(s_s.c_str());
+
+  Serial.println("time loading");
+  Serial.print(hours);
+  Serial.print(":");
+  Serial.print(minutes);
+  Serial.print(":");
+  Serial.println(seconds);
+}
+
+
+void boot_up_screen()
+{
+  u8g2.setFont(u8g2_font_ncenB14_tr);
+  u8g2.clearBuffer();
+  u8g2.drawStr(0, 16, "Welcome");
+  u8g2.drawStr(0, 36, "Xavier Su");
+  u8g2.drawStr(0, 60, "Please wait");
+  u8g2.drawHLine(0, 42, 128);
+  u8g2.drawHLine(0, 63, 128);
+  u8g2.sendBuffer();
+
+}
+
+void boot_up_after()
+{
+
+
+  const char *b = {0};
+  char tem_show[] = "00.00";
+  b = tem.c_str();
+  strcpy(tem_show, b);
+  u8g2.clearBuffer();
+
+  u8g2.setFont(u8g2_font_ncenB14_tr);
+  u8g2.drawStr(0, 60, "time:");
+  //u8g2.setFont(u8g2_font_unifont_t_symbols);
+  u8g2.setFont(u8g2_font_unifont_t_chinese2);
+  u8g2.setCursor(0, 14);
+  u8g2.print("按下开门");
+  u8g2.setCursor(75, 14);
+  u8g2.print("temp:");
+
+  char hours_s[] = "00";
+  char minutes_s[] = "00";
+  char seconds_s[] = "00";
+
+  sprintf(hours_s, "%d", hours);
+  sprintf(minutes_s, "%d", minutes);
+  sprintf(seconds_s, "%d", seconds);
+
+  char time_show[10] = {0};
+  char maohao[] = ":";
+  strcat(time_show, hours_s);
+  strcat(time_show, maohao);
+  strcat(time_show, minutes_s);
+  strcat(time_show, maohao);
+  strcat(time_show, seconds_s);
+
+  //Serial.println("time befor");
+  //Serial.println(time_show);
+
+
+
+  u8g2.drawStr(66, 36, tem_show);
+  u8g2.setFont(u8g2_font_ncenB14_tr);
+  u8g2.drawCircle(108, 23, 2, U8G2_DRAW_ALL);
+  u8g2.drawStr(111, 36, "C");
+  u8g2.drawLine(64, 0, 64, 42);
+  u8g2.drawHLine(0, 42, 128);
+  u8g2.drawHLine(0, 63, 128);
+  u8g2.drawStr(51, 60, time_show);
+  u8g2.sendBuffer();
+
+
+}
+
+// 连接WiFi
+int net = 0;
+void connectWiFi() {
+  WiFi.begin(ssid, password);                  // 启动网络连接
+  Serial.print("Connecting to ");              // 串口监视器输出网络连接信息
+  Serial.print(ssid); Serial.println(" ...");  // 告知用户NodeMCU正在尝试WiFi连接
+
+  int i_num = 0;                                   // 这一段程序语句用于检查WiFi是否连接成功
+  while (WiFi.status() != WL_CONNECTED) {      // WiFi.status()函数的返回值是由NodeMCU的WiFi连接状态所决定的。
+    delay(1000);                               // 如果WiFi连接成功则返回值为WL_CONNECTED
+    Serial.print(i_num++); Serial.print(' ');      // 此处通过While循环让NodeMCU每隔一秒钟检查一次WiFi.status()函数返回值
+    if (i_num > 10) {
+      Serial.println("重新连接中。。。"); i_num = 0;
+
+      u8g2.setFont(u8g2_font_ncenB14_tr);
+      u8g2.clearBuffer();
+      u8g2.drawStr(0, 16, "Worse luck!");
+
+      u8g2.setFont(u8g2_font_ncenB14_tr);
+      u8g2.drawStr(0, 36, "Xavier Su");
+      u8g2.drawStr(0, 60, "No network...");
+      u8g2.drawHLine(0, 42, 128);
+      u8g2.drawHLine(0, 63, 128);
+      u8g2.sendBuffer();
+      net++;
+      if (net > 0) {
+        break;
+      }
+      continue;
+    }
+  }                                            // 同时NodeMCU将通过串口监视器输出连接时长读秒。
+  // 这个读秒是通过变量i每隔一秒自加1来实现的。
+  Serial.println("");                          // WiFi连接成功后
+  Serial.println("Connection established!");   // NodeMCU将通过串口监视器输出"连接成功"信息。
+  Serial.print("IP address:    ");             // 同时还将输出NodeMCU的IP地址。这一功能是通过调用
+  Serial.println(WiFi.localIP());              // WiFi.localIP()函数来实现的。该函数的返回值即NodeMCU的IP地址。
+}
