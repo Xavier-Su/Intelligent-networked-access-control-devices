@@ -1,4 +1,6 @@
 # Intelligent-networked-access-control-devices
+(STM32F103C8T6)Intelligent networked access control devices
+该文件夹中是STM32F103C8T6版本，下面的文件夹是Arduino nano版本
 (Arduino nano)Intelligent networked access control devices
 
 1.使用门禁控制端核心模块代码.txt，将该程序录入 Arduino nano 或者uno 等控制器。
